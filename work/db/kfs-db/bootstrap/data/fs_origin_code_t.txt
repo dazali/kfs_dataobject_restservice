@@ -1,0 +1,2 @@
+fs_origin_cd|obj_id|ver_nbr|fs_server_nm|fs_database_nm|fs_database_desc|next_cptlast_nbr|next_nonca_nbr|next_cg_agency_nbr|next_cg_subcnr_nbr|nxt_dv_payeeid_nbr|nxt_fdoc_att_id|ar_next_cust_nbr|fdoc_next_item_id|row_actv_ind|
+01|054EDFB3B241C8D2E043814FD881C8D2|17.0|KULDBA|KFS|KFS|385596.0|153.0|54984|850|178064.0|593252.0|18763.0|348.0|Y|

@@ -1,0 +1,5 @@
+typ_restr_cd|typ_restr_desc|perm|row_actv_ind|obj_id|ver_nbr|
+NA|Not Applicable|N|Y|8529CD48484E060AE0404F8189D81C0B|1.0|
+P|Permanently Restricted|Y|Y|8529CD48484F060AE0404F8189D81C0B|1.0|
+T|Temporarily Restricted|N|Y|8529CD484850060AE0404F8189D81C0B|1.0|
+U|Unrestricted|N|Y|8529CD48484D060AE0404F8189D81C0B|1.0|

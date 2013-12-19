@@ -1,0 +1,2 @@
+agrmnt_spcl_instrc_cd|agrmnt_spcl_instrc_desc|row_actv_ind|obj_id|ver_nbr|
+0|None|Y|8529CD484831060AE0404F8189D81C0B|1.0|

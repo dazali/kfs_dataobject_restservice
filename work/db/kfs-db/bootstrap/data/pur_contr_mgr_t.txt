@@ -1,0 +1,2 @@
+contr_mgr_cd|obj_id|ver_nbr|contr_mgr_nm|contr_mgr_phn_nbr|contr_mgr_fax_nbr|contr_mgr_dlgn_dlr_lmt|actv_ind|
+99.0|2E5054C403C230CEE043814FD88130CE|1.0|User,Kuali|000-555-1212|000-555-1212|100000.0|Y|

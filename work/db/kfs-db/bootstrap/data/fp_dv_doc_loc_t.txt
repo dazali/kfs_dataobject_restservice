@@ -1,0 +1,2 @@
+dv_doc_loc_cd|obj_id|ver_nbr|dv_doc_loc_nm|dv_doc_loc_addr|row_actv_ind|
+01|A6ACFD82661042CA8042757A7B55FFCB|1.0|Kuali Default DV Doc Loc||Y|

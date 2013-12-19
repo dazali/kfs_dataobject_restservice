@@ -1,0 +1,2 @@
+sec_rpt_grp|sec_rpt_grp_desc|sec_rpt_grp_ord|row_actv_ind|obj_id|ver_nbr|
+CSHEQ|Cash Equivalents|1.0|Y|8529CD48454A060AE0404F8189D81C0B|1.0|

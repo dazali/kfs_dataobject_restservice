@@ -1,0 +1,105 @@
+<!--
+ Copyright 2007-2012 The Kuali Foundation
+ 
+ Licensed under the Educational Community License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+ 
+ http://www.opensource.org/licenses/ecl2.php
+ 
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+<!-- CONFIGURATION MANAGEMENT TARGETS 
+
+Tasks in this file will not be deployed with the application.  Tasks that 
+are intended for use only by Kuali Foundation developers.
+
+-->
+<project name="imported">
+	<!-- dummy targets to keep validation happy -->
+	<target name="init-properties" />
+	<target name="init-make-references" />
+	<target name="dist-local" />
+	<target name="clean" />
+	<target name="clean-all" />
+	<target name="make-source" />
+	<target name="build-eclipse-classpath" />
+	<target name="extract-rice-libraries" />
+	<target name="refresh-kfs-db" />
+	<target name="make-javadoc" />
+
+	<target name="init-additional-properties" depends="init-properties">
+		<echo message="Reading Properties: ${properties.directory}/build-foundation.properties" />
+		<property file="${properties.directory}/build-foundation.properties" />
+		<if>
+			<available file="${properties.directory}/distribution.properties" />
+			<then>
+				<echo message="Reading Properties: ${properties.directory}/distribution.properties" />
+				<property file="${properties.directory}/distribution.properties" />
+			</then>
+		</if>
+	</target>
+
+  	  
+	<target name="update-rice-dev" depends="update-rice-basic,extract-rice-libraries,build-eclipse-classpath,dist-local" />
+  
+	<target name="update-rice" depends="update-rice-dev,update-rice-extended" />
+  
+	<target name="update-rice-basic" depends="init-additional-properties,update-rice-server-war" />
+  
+	<target name="clean-rice-maven" depends="init-additional-properties" if="clean.rice">
+        <maven goals="clean:clean" dir="${rice.project.directory}" />
+	</target>
+	
+    <target name="update-rice-server-war" depends="init-additional-properties,clean-rice-maven">
+        <maven goals="install" dir="${rice.project.directory}" />
+    	<delete dir="${build.appserver.directory}" includes="${rice.server.war.file.name.prefix}*.war" />
+        <copy file="${rice.project.directory}/${rice.web.module.name}/target/${rice.war.file.name}" 
+        	  tofile="${build.appserver.directory}/${rice.server.war.file.name}" verbose="true" overwrite="true" failonerror="true"  />
+    </target>
+    
+	<target name="update-rice-extended" depends="init-additional-properties,update-rice-sources" />
+  
+	<target name="update-rice-sources" depends="init-additional-properties">
+    	<maven goals="source:jar" dir="${rice.project.directory}" />
+		<delete verbose="true" failonerror="false">
+		    <fileset dir="build/rice-sources">
+	  			<include name="rice-*-sources.jar" />
+	  		</fileset>
+		</delete>
+    	<copy todir="build/rice-sources" verbose="true" overwrite="true" >
+      		<fileset dir="${rice.project.directory}">
+      			<include name="**/target/rice-*-sources.jar" />
+      		</fileset>
+       		<flattenmapper />
+    	</copy>
+	</target>
+  
+  	<macrodef name="maven">
+    	<attribute name="goals" />
+    	<attribute name="options" default="" />
+        <attribute name="dir" default="" />
+    	<sequential>
+      		<java classname="org.codehaus.plexus.classworlds.launcher.Launcher" dir="@{dir}" fork="true" failonerror="true">
+      		   	<jvmarg value="-Xmx768m" />
+      		    <jvmarg value="-XX:MaxPermSize=384m" />
+        		<arg line="@{options} @{goals}"/>
+        		<sysproperty key="classworlds.conf" value="${maven.home.directory}/bin/m2.conf"/>
+        		<sysproperty key="maven.home" value="${maven.home.directory}"/>
+        		<sysproperty key="skipTests" value="true"/>
+        		<sysproperty key="maven.surefire.skip" value="true"/>
+        		<classpath>
+          			<fileset dir="${maven.home.directory}/boot">
+            			<include name="plexus-classworlds-*.jar"/>
+          			</fileset>
+        		</classpath>
+      		</java>
+    	</sequential>
+  	</macrodef>
+
+	
+</project>

@@ -1,0 +1,10 @@
+
+DATABASE = import.cfg
+WORKSPACE = /java/krice/kfs-5.0.2/work/db/kfs-db/demo
+PROJECT_DIR = /java/krice/kfs-5.0.2/work/db/kfs-db/demo
+FORMAT_DIR = /java/krice/kfs-5.0.2/work/db/kfs-db/demo/formats
+GRAPH_DIR = /java/krice/kfs-5.0.2/work/db/kfs-db/demo/graphs
+DATA_DIR = /java/krice/kfs-5.0.2/work/db/kfs-db/demo/data
+DUMP_DIR = /java/krice/kfs-5.0.2/work/db/kfs-db/demo/data
+OUTPUT_DUMPS = false
+    	
