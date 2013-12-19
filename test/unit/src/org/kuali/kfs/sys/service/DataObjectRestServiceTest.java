@@ -34,6 +34,16 @@ import org.kuali.kfs.sys.context.SpringContext;
 public class DataObjectRestServiceTest extends KualiTestBase {
 
     public class MockUriInfo implements UriInfo {
+        MultivaluedMap<String, String> queryParameters;
+
+        public MockUriInfo() {
+
+        }
+
+        public MockUriInfo(MultivaluedMap<String, String> queryParameters) {
+            this.queryParameters = queryParameters;
+        }
+
         @Override
         public URI getAbsolutePath() {
             // TODO Auto-generated method stub
@@ -101,9 +111,6 @@ public class DataObjectRestServiceTest extends KualiTestBase {
         }
         @Override
         public MultivaluedMap<String, String> getQueryParameters() {
-            MultivaluedMap<String, String> queryParameters = new MetadataMap<String, String>();
-            queryParameters.add("chartOfAccountsCode", "BL");
-            queryParameters.add("accountNumber", "1031420");
             return queryParameters;
         }
         @Override
@@ -126,7 +133,23 @@ public class DataObjectRestServiceTest extends KualiTestBase {
     public void testGetDataObjects() throws Exception {
         assertNotNull(getDataObjectRestService());
 
-        System.out.println(getDataObjectRestService().getDataObjects("KFS-COA", "Account.xml", new MockUriInfo()));
+        String namespace = "KFS-COA";
+        String xmlDataObject = "Account.xml";
+        String jsonDataObject = "Account.json";
+
+        MultivaluedMap<String, String> queryParameters = new MetadataMap<String, String>();
+        queryParameters.add("chartOfAccountsCode", "BL");
+        queryParameters.add("accountNumber", "1031420");
+
+        MockUriInfo mockUriInfo = new MockUriInfo(queryParameters);
+
+        String jsonDataObjectsOutput = getDataObjectRestService().getDataObjects(namespace, jsonDataObject, mockUriInfo);
+        System.out.println("JSON output:");
+        System.out.println(jsonDataObjectsOutput);
+
+        String xmlDataObjectsOutput = getDataObjectRestService().getDataObjects(namespace, xmlDataObject, mockUriInfo);
+        System.out.println("XML output:");
+        System.out.println(xmlDataObjectsOutput);
     }
 
     public DataObjectRestService getDataObjectRestService() {
