@@ -1,17 +1,15 @@
 package org.kuali.kfs.sys.service.impl;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriInfo;
 
-import org.apache.commons.lang.StringUtils;
-import org.codehaus.jackson.JsonGenerationException;
 import org.codehaus.jackson.map.DeserializationConfig;
-import org.codehaus.jackson.map.JsonMappingException;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.kuali.kfs.sys.businessobject.datadictionary.FinancialSystemBusinessObjectEntry;
 import org.kuali.kfs.sys.businessobject.lookup.LookupableSpringContext;
@@ -32,7 +30,7 @@ public class DataObjectRestServiceImpl implements DataObjectRestService {
 	private PersistenceStructureService persistenceStructureService;
 
     @Override
-    public String getDataObjects(String namespace, String dataobject, UriInfo info) {
+    public Response getDataObjects(String namespace, String dataobject, UriInfo info) throws Exception {
 
         Map<String, String> fieldValues = new HashMap<String, String>();
         if (info != null) {
@@ -58,48 +56,47 @@ public class DataObjectRestServiceImpl implements DataObjectRestService {
             inquiryFields.addAll(section.getInquiryFieldNames());
         }
 
-        if (data[1].equalsIgnoreCase("json")) {
-            List<Map<String, Object>> resultMap = new ArrayList<Map<String, Object>>();
-            for (BusinessObject bo : results) {
-                Map<String, Object> objectMap = new HashMap<String, Object>();
-                for (String propertyName : inquiryFields) {
-                    Object propertyValue = ObjectUtils.getPropertyValue(bo, propertyName);
-                    Class propertyType = ObjectUtils.getPropertyType(bo, propertyName, getPersistenceStructureService());
-                    if (propertyType != null &&
-                            (TypeUtils.isStringClass(propertyType) ||
-                            TypeUtils.isIntegralClass(propertyType) ||
-                            TypeUtils.isDecimalClass(propertyType) ||
-                            TypeUtils.isTemporalClass(propertyType) ||
-                            TypeUtils.isBooleanClass(propertyType))) {
+        List<Map<String, Object>> resultMap = new ArrayList<Map<String, Object>>();
+        List objects = new ArrayList();
+
+        boolean doJson = data[1].equalsIgnoreCase("json");
+        boolean doXML = data[1].equalsIgnoreCase("xml");
+
+        for (BusinessObject bo : results) {
+            Map<String, Object> objectMap = new HashMap<String, Object>();
+            Object object = ObjectUtils.createNewObjectFromClass(boe.getBusinessObjectClass());
+            for (String propertyName : inquiryFields) {
+                Object propertyValue = ObjectUtils.getPropertyValue(bo, propertyName);
+                Class propertyType = ObjectUtils.getPropertyType(bo, propertyName, getPersistenceStructureService());
+                if (propertyType != null && !propertyName.contains(".") &&
+                        (TypeUtils.isStringClass(propertyType) ||
+                        TypeUtils.isIntegralClass(propertyType) ||
+                        TypeUtils.isDecimalClass(propertyType) ||
+                        TypeUtils.isTemporalClass(propertyType) ||
+                        TypeUtils.isBooleanClass(propertyType))) {
+                    if (doJson) {
                         objectMap.put(propertyName, propertyValue);
+                    } else if (doXML) {
+                        ObjectUtils.setObjectProperty(object, propertyName, propertyValue);
                     }
                 }
-
-                resultMap.add(objectMap);
             }
 
-            ObjectMapper mapper = new ObjectMapper();
-            mapper.configure(DeserializationConfig.Feature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-
-            try {
-                return mapper.writeValueAsString(resultMap);
-            } catch (JsonGenerationException e) {
-                // TODO Auto-generated catch block
-                e.printStackTrace();
-            } catch (JsonMappingException e) {
-                // TODO Auto-generated catch block
-                e.printStackTrace();
-            } catch (IOException e) {
-                // TODO Auto-generated catch block
-                e.printStackTrace();
-            }
-
-            return StringUtils.EMPTY;
-        } else if (data[1].equalsIgnoreCase("xml")) {
-            return getXmlObjectSerializerService().toXml(results);
+            resultMap.add(objectMap);
+            objects.add(object);
         }
 
-        return StringUtils.EMPTY;
+        if (doJson) {
+            ObjectMapper mapper = new ObjectMapper();
+            mapper.configure(DeserializationConfig.Feature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+            String jsonData = mapper.defaultPrettyPrintingWriter().writeValueAsString(resultMap);
+
+            return Response.ok(jsonData, MediaType.APPLICATION_JSON).build();
+        } else if (doXML) {
+            return Response.ok(getXmlObjectSerializerService().toXml(objects), MediaType.APPLICATION_XML).build();
+        }
+
+        return Response.status(Response.Status.NOT_FOUND).entity("Data object not found.").build();
     }
 
     protected LookupableHelperService getLookupableHelperService(String lookupableID) {
@@ -133,5 +130,4 @@ public class DataObjectRestServiceImpl implements DataObjectRestService {
     public XmlObjectSerializerService getXmlObjectSerializerService() {
         return SpringContext.getBean(XmlObjectSerializerService.class);
     }
-
 }

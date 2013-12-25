@@ -22,6 +22,7 @@ import java.util.List;
 
 import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.PathSegment;
+import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriBuilder;
 import javax.ws.rs.core.UriInfo;
 
@@ -143,13 +144,13 @@ public class DataObjectRestServiceTest extends KualiTestBase {
 
         MockUriInfo mockUriInfo = new MockUriInfo(queryParameters);
 
-        String jsonDataObjectsOutput = getDataObjectRestService().getDataObjects(namespace, jsonDataObject, mockUriInfo);
+        Response jsonDataObjectsOutput = getDataObjectRestService().getDataObjects(namespace, jsonDataObject, mockUriInfo);
         System.out.println("JSON output:");
-        System.out.println(jsonDataObjectsOutput);
+        System.out.println(jsonDataObjectsOutput.getEntity());
 
-        String xmlDataObjectsOutput = getDataObjectRestService().getDataObjects(namespace, xmlDataObject, mockUriInfo);
+        Response xmlDataObjectsOutput = getDataObjectRestService().getDataObjects(namespace, xmlDataObject, mockUriInfo);
         System.out.println("XML output:");
-        System.out.println(xmlDataObjectsOutput);
+        System.out.println(xmlDataObjectsOutput.getEntity());
     }
 
     public DataObjectRestService getDataObjectRestService() {

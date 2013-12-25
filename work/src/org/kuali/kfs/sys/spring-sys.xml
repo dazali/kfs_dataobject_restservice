@@ -1117,7 +1117,8 @@
 				<property name="serviceNameSpaceURI" value="http://student.kuali.org/wsdl/dataobjects" />
 				<property name="service" ref="dataObjectService" />
 				<property name="resourceClass" value="org.kuali.kfs.sys.service.impl.DataObjectRestServiceImpl" />
-				<property name="localServiceName" value="dataObjectRestService" />
+				<property name="localServiceName" value="dataobjects" />
+				<property name="busSecurity" value="false" />			
 			</bean>
 		</property>		
 	</bean>    
