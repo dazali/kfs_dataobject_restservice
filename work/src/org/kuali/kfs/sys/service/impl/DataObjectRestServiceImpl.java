@@ -29,8 +29,12 @@ public class DataObjectRestServiceImpl implements DataObjectRestService {
 	private DataDictionaryService dataDictionaryService;
 	private PersistenceStructureService persistenceStructureService;
 
+	protected enum DataType {
+	    JSON, XML
+	}
+
     @Override
-    public Response getDataObjects(String namespace, String dataobject, UriInfo info) throws Exception {
+    public Response getDataObjects(String namespace, String dataobject, String type, UriInfo info) throws Exception {
 
         Map<String, String> fieldValues = new HashMap<String, String>();
         if (info != null) {
@@ -39,12 +43,7 @@ public class DataObjectRestServiceImpl implements DataObjectRestService {
             }
         }
 
-        String[] data = null;
-        if (dataobject != null) {
-            data = dataobject.split("\\.");
-        }
-
-        FinancialSystemBusinessObjectEntry boe = (FinancialSystemBusinessObjectEntry) getDataDictionaryService().getDictionaryObject(data[0]);
+        FinancialSystemBusinessObjectEntry boe = (FinancialSystemBusinessObjectEntry) getDataDictionaryService().getDictionaryObject(dataobject);
 
         LookupableHelperService lookupableHelperService = getLookupableHelperService(boe.getLookupDefinition().getLookupableID());
         lookupableHelperService.setBusinessObjectClass(boe.getBusinessObjectClass());
@@ -59,8 +58,7 @@ public class DataObjectRestServiceImpl implements DataObjectRestService {
         List<Map<String, Object>> resultMap = new ArrayList<Map<String, Object>>();
         List objects = new ArrayList();
 
-        boolean doJson = data[1].equalsIgnoreCase("json");
-        boolean doXML = data[1].equalsIgnoreCase("xml");
+        DataType dataType = DataType.valueOf(type.toUpperCase());
 
         for (BusinessObject bo : results) {
             Map<String, Object> objectMap = new HashMap<String, Object>();
@@ -74,10 +72,14 @@ public class DataObjectRestServiceImpl implements DataObjectRestService {
                         TypeUtils.isDecimalClass(propertyType) ||
                         TypeUtils.isTemporalClass(propertyType) ||
                         TypeUtils.isBooleanClass(propertyType))) {
-                    if (doJson) {
-                        objectMap.put(propertyName, propertyValue);
-                    } else if (doXML) {
-                        ObjectUtils.setObjectProperty(object, propertyName, propertyValue);
+
+                    switch (dataType) {
+                        case JSON:
+                            objectMap.put(propertyName, propertyValue);
+                            break;
+                        case XML:
+                            ObjectUtils.setObjectProperty(object, propertyName, propertyValue);
+                            break;
                     }
                 }
             }
@@ -86,14 +88,15 @@ public class DataObjectRestServiceImpl implements DataObjectRestService {
             objects.add(object);
         }
 
-        if (doJson) {
-            ObjectMapper mapper = new ObjectMapper();
-            mapper.configure(DeserializationConfig.Feature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-            String jsonData = mapper.defaultPrettyPrintingWriter().writeValueAsString(resultMap);
+        switch (dataType) {
+            case JSON:
+                ObjectMapper mapper = new ObjectMapper();
+                mapper.configure(DeserializationConfig.Feature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+                String jsonData = mapper.defaultPrettyPrintingWriter().writeValueAsString(resultMap);
 
-            return Response.ok(jsonData, MediaType.APPLICATION_JSON).build();
-        } else if (doXML) {
-            return Response.ok(getXmlObjectSerializerService().toXml(objects), MediaType.APPLICATION_XML).build();
+                return Response.ok(jsonData, MediaType.APPLICATION_JSON).build();
+            case XML:
+                return Response.ok(getXmlObjectSerializerService().toXml(objects), MediaType.APPLICATION_XML).build();
         }
 
         return Response.status(Response.Status.NOT_FOUND).entity("Data object not found.").build();

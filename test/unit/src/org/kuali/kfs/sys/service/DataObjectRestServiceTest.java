@@ -135,8 +135,7 @@ public class DataObjectRestServiceTest extends KualiTestBase {
         assertNotNull(getDataObjectRestService());
 
         String namespace = "KFS-COA";
-        String xmlDataObject = "Account.xml";
-        String jsonDataObject = "Account.json";
+        String dataObject = "Account";
 
         MultivaluedMap<String, String> queryParameters = new MetadataMap<String, String>();
         queryParameters.add("chartOfAccountsCode", "BL");
@@ -144,11 +143,11 @@ public class DataObjectRestServiceTest extends KualiTestBase {
 
         MockUriInfo mockUriInfo = new MockUriInfo(queryParameters);
 
-        Response jsonDataObjectsOutput = getDataObjectRestService().getDataObjects(namespace, jsonDataObject, mockUriInfo);
+        Response jsonDataObjectsOutput = getDataObjectRestService().getDataObjects(namespace, dataObject, "json", mockUriInfo);
         System.out.println("JSON output:");
         System.out.println(jsonDataObjectsOutput.getEntity());
 
-        Response xmlDataObjectsOutput = getDataObjectRestService().getDataObjects(namespace, xmlDataObject, mockUriInfo);
+        Response xmlDataObjectsOutput = getDataObjectRestService().getDataObjects(namespace, dataObject, "xml" , mockUriInfo);
         System.out.println("XML output:");
         System.out.println(xmlDataObjectsOutput.getEntity());
     }

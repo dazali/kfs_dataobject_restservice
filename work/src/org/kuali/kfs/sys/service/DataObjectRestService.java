@@ -13,8 +13,8 @@ import javax.ws.rs.core.UriInfo;
 public interface DataObjectRestService {
 
     @GET
-    @Path("/{namespace}/{dataobject}")
+    @Path("/{namespace}/{dataobject}.{type}")
     @Produces({MediaType.APPLICATION_JSON, MediaType.APPLICATION_XML})
-	public Response getDataObjects(@PathParam("namespace") String namespace, @PathParam("dataobject") String dataobject, @Context UriInfo info) throws Exception;
+	public Response getDataObjects(@PathParam("namespace") String namespace, @PathParam("dataobject") String dataobject, @PathParam("type") String type, @Context UriInfo info) throws Exception;
 
 }
