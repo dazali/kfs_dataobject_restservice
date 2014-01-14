@@ -11,6 +11,7 @@ import javax.ws.rs.core.UriInfo;
 
 import org.codehaus.jackson.map.DeserializationConfig;
 import org.codehaus.jackson.map.ObjectMapper;
+import org.codehaus.jackson.map.SerializationConfig;
 import org.kuali.kfs.sys.businessobject.datadictionary.FinancialSystemBusinessObjectEntry;
 import org.kuali.kfs.sys.businessobject.lookup.LookupableSpringContext;
 import org.kuali.kfs.sys.context.SpringContext;
@@ -92,7 +93,9 @@ public class DataObjectRestServiceImpl implements DataObjectRestService {
             case JSON:
                 ObjectMapper mapper = new ObjectMapper();
                 mapper.configure(DeserializationConfig.Feature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+                mapper.configure(SerializationConfig.Feature.WRAP_ROOT_VALUE, true);
                 String jsonData = mapper.defaultPrettyPrintingWriter().writeValueAsString(resultMap);
+                jsonData = jsonData.replaceFirst("ArrayList", "ArrayList<"+boe.getBusinessObjectClass().getName()+">");
 
                 return Response.ok(jsonData, MediaType.APPLICATION_JSON).build();
             case XML:
