@@ -29,6 +29,7 @@ import org.kuali.kfs.sys.context.SpringContext;
 import org.kuali.kfs.sys.service.DataObjectRestService;
 import org.kuali.rice.core.api.resourceloader.GlobalResourceLoader;
 import org.kuali.rice.core.api.util.type.TypeUtils;
+import org.kuali.rice.coreservice.framework.parameter.ParameterService;
 import org.kuali.rice.kns.datadictionary.InquirySectionDefinition;
 import org.kuali.rice.kns.lookup.LookupableHelperService;
 import org.kuali.rice.krad.UserSession;
@@ -37,6 +38,7 @@ import org.kuali.rice.krad.service.DataDictionaryService;
 import org.kuali.rice.krad.service.PersistenceStructureService;
 import org.kuali.rice.krad.service.XmlObjectSerializerService;
 import org.kuali.rice.krad.util.GlobalVariables;
+import org.kuali.rice.krad.util.KRADConstants;
 import org.kuali.rice.krad.util.KRADUtils;
 import org.kuali.rice.krad.util.ObjectUtils;
 import org.kuali.rice.ksb.security.service.DigitalSignatureService;
@@ -49,6 +51,7 @@ public class DataObjectRestServiceImpl implements DataObjectRestService {
 
 	private DataDictionaryService dataDictionaryService;
 	private PersistenceStructureService persistenceStructureService;
+    private ParameterService parameterService;
 	private static final String ERROR_PAGE = "<html> <head> <title>Error report</title> <style> <!-- H1 { font-family: Tahoma, Arial, sans-serif; color: white; background-color: #525D76; font-size: 22px; }  H2 { font-family: Tahoma, Arial, sans-serif; color: white; background-color: #525D76; font-size: 16px; }  H3 { font-family: Tahoma, Arial, sans-serif; color: white; background-color: #525D76; font-size: 14px; }  BODY { font-family: Tahoma, Arial, sans-serif; color: black; background-color: white; }  B { font-family: Tahoma, Arial, sans-serif; color: white; background-color: #525D76; }  P,DIV { font-family: Tahoma, Arial, sans-serif; background: white; color: black; font-size: 12px; }  A { color: black; }  A.name { color: black; }  HR { color: #525D76; } --> </style> </head> <body> <h1>HTTP Status [STATUS] - [URI]</h1> <HR size='1' noshade='noshade'> <p> <b>type</b> Status report </p> <p> <b>message</b> <u>[URI]</u> </p> <p> <b>description</b> <u>[DESC]</u> </p> <HR size='1' noshade='noshade'> <div>[EXCEPTION]</div></body> </html>";
 
 	private static final String STATUS = "[STATUS]";
@@ -64,6 +67,12 @@ public class DataObjectRestServiceImpl implements DataObjectRestService {
     @Override
     public Response getDataObjects(String namespace, String dataobject, String type, UriInfo info, HttpHeaders headers, HttpServletRequest request) throws Exception {
         try {
+            // check for https, authorization
+            if (!info.getRequestUri().toString().toUpperCase().startsWith("HTTPS") ||
+                    !isAuthorized(headers, request)) {
+                return Response.status(Response.Status.FORBIDDEN).entity(generateErrorResponse(Response.Status.FORBIDDEN.getStatusCode() + "", info.getRequestUri().getPath(), Response.Status.FORBIDDEN.getReasonPhrase())).build();
+            }
+
             DataType dataType = null;
             try {
                 dataType = DataType.valueOf(type.toUpperCase());
@@ -79,10 +88,12 @@ public class DataObjectRestServiceImpl implements DataObjectRestService {
                 return Response.status(Response.Status.BAD_REQUEST).entity(generateErrorResponse(Response.Status.BAD_REQUEST.getStatusCode() + "", info.getRequestUri().getPath(), Response.Status.BAD_REQUEST.getReasonPhrase())).build();
             }
 
-            if (!isAuthorized(headers, request) ||
+            Boolean isModuleLocked = getParameterService().getParameterValueAsBoolean(namespace, KfsParameterConstants.PARAMETER_ALL_DETAIL_TYPE, KRADConstants.SystemGroupParameterNames.OLTP_LOCKOUT_ACTIVE_IND);
+
+            // check for locked module, json/xml, uriInfo, inquiry definition
+            if (isModuleLocked ||
                     dataType == null ||
                     info == null ||
-                    //!info.getRequestUri().toString().toUpperCase().startsWith("HTTPS") ||
                     !boe.hasInquiryDefinition()) {
                 return Response.status(Response.Status.FORBIDDEN).entity(generateErrorResponse(Response.Status.FORBIDDEN.getStatusCode() + "", info.getRequestUri().getPath(), Response.Status.FORBIDDEN.getReasonPhrase())).build();
             }
@@ -253,6 +264,17 @@ public class DataObjectRestServiceImpl implements DataObjectRestService {
 
     public void setPersistenceStructureService(PersistenceStructureService persistenceStructureService) {
         this.persistenceStructureService = persistenceStructureService;
+    }
+
+    public ParameterService getParameterService() {
+        if(parameterService == null) {
+            parameterService = SpringContext.getBean(ParameterService.class);
+        }
+        return parameterService;
+    }
+
+    public void setParameterService(ParameterService parameterService) {
+        this.parameterService = parameterService;
     }
 
     public XmlObjectSerializerService getXmlObjectSerializerService() {
