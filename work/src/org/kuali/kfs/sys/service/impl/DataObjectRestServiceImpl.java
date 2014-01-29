@@ -27,6 +27,7 @@ import org.kuali.kfs.sys.businessobject.datadictionary.FinancialSystemBusinessOb
 import org.kuali.kfs.sys.businessobject.lookup.LookupableSpringContext;
 import org.kuali.kfs.sys.context.SpringContext;
 import org.kuali.kfs.sys.service.DataObjectRestService;
+import org.kuali.rice.core.api.config.property.ConfigContext;
 import org.kuali.rice.core.api.resourceloader.GlobalResourceLoader;
 import org.kuali.rice.core.api.util.type.TypeUtils;
 import org.kuali.rice.coreservice.framework.parameter.ParameterService;
@@ -67,8 +68,8 @@ public class DataObjectRestServiceImpl implements DataObjectRestService {
     @Override
     public Response getDataObjects(String namespace, String dataobject, String type, UriInfo info, HttpHeaders headers, HttpServletRequest request) throws Exception {
         try {
-            // check for https, authorization
-            if (!info.getRequestUri().toString().toUpperCase().startsWith("HTTPS") ||
+            // check for https (will be ignored in dev mode), authorization
+            if ((!ConfigContext.getCurrentContextConfig().getDevMode() && !info.getRequestUri().toString().toUpperCase().startsWith("HTTPS")) ||
                     !isAuthorized(headers, request)) {
                 return Response.status(Response.Status.FORBIDDEN).entity(generateErrorResponse(Response.Status.FORBIDDEN.getStatusCode() + "", info.getRequestUri().getPath(), Response.Status.FORBIDDEN.getReasonPhrase())).build();
             }
@@ -185,7 +186,7 @@ public class DataObjectRestServiceImpl implements DataObjectRestService {
 	    if (request != null) {
     	    UserSession userSession = KRADUtils.getUserSessionFromRequest(request);
             if (userSession != null && GlobalVariables.getUserSession().getKualiSessionId().equals(userSession.getKualiSessionId())) {
-    	        return true; // TODO: Verify role
+    	        return true; // TODO: Verify role?
     	    }
 	    }
 
