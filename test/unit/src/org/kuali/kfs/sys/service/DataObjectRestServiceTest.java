@@ -17,7 +17,11 @@ package org.kuali.kfs.sys.service;
 
 import static org.kuali.kfs.sys.fixture.UserNameFixture.khuntley;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
 import java.net.URI;
+import java.net.URL;
 import java.security.Signature;
 import java.security.cert.Certificate;
 import java.util.Arrays;
@@ -155,7 +159,7 @@ public class DataObjectRestServiceTest extends KualiTestBase {
 
                 String moduleKeyStoreAlias = getJavaSecurityManagementService().getModuleKeyStoreAlias();
                 headerFields.put(KSBConstants.DIGITAL_SIGNATURE_HEADER, Arrays.asList(new String(Base64.encodeBase64(rsa.sign()), "UTF-8")));
-                headerFields.put(KSBConstants.KEYSTORE_ALIAS_HEADER, Arrays.asList(moduleKeyStoreAlias));
+                //headerFields.put(KSBConstants.KEYSTORE_ALIAS_HEADER, Arrays.asList(moduleKeyStoreAlias));
                 Certificate cert = getJavaSecurityManagementService().getCertificate(moduleKeyStoreAlias);
                 headerFields.put(KSBConstants.KEYSTORE_CERTIFICATE_HEADER, Arrays.asList(new String(Base64.encodeBase64(cert.getEncoded()), "UTF-8")));
             }
@@ -247,6 +251,47 @@ public class DataObjectRestServiceTest extends KualiTestBase {
         Response xmlDataObjectsOutput = getDataObjectRestService().getDataObjects(namespace, dataObject, "xml" , mockUriInfo, header, null);
         System.out.println("XML output:");
         System.out.println(xmlDataObjectsOutput.getEntity());
+    }
+
+    public void testGetDataObjectsGet() throws Exception {
+        String url = "http://localhost:8080/kfs-dev/remoting/dataobjects/KFS-COA/Account.json?chartOfAccountsCode=BL&accountNumber=1031420";
+        System.out.println(sendQuery(url, "GET"));
+    }
+
+    public void testGetDataObjectsPost() throws Exception {
+        String url = "http://localhost:8080/kfs-dev/remoting/dataobjects/KFS-COA/Account.json?chartOfAccountsCode=BL&accountNumber=1031420";
+        System.out.println(sendQuery(url, "POST"));
+    }
+
+    protected String sendQuery(String urlToRead, String requestMethod) {
+        URL url;
+        HttpURLConnection conn;
+        BufferedReader rd;
+        String line;
+        String result = "";
+
+        try {
+            url = new URL(urlToRead);
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod(requestMethod);
+
+            Signature rsa = getDigitalSignatureService().getSignatureForSigning();
+            String moduleKeyStoreAlias = getJavaSecurityManagementService().getModuleKeyStoreAlias();
+            conn.addRequestProperty(KSBConstants.DIGITAL_SIGNATURE_HEADER, new String(Base64.encodeBase64(rsa.sign()), "UTF-8"));
+            //conn.addRequestProperty(KSBConstants.KEYSTORE_ALIAS_HEADER, moduleKeyStoreAlias);
+            Certificate cert = getJavaSecurityManagementService().getCertificate(moduleKeyStoreAlias);
+            conn.addRequestProperty(KSBConstants.KEYSTORE_CERTIFICATE_HEADER, new String(Base64.encodeBase64(cert.getEncoded()), "UTF-8"));
+
+            rd = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+            while ((line = rd.readLine()) != null) {
+                result += line;
+            }
+            rd.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return result;
     }
 
     protected DataObjectRestService getDataObjectRestService() {

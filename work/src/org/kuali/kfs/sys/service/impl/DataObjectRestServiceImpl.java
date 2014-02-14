@@ -1,9 +1,7 @@
 package org.kuali.kfs.sys.service.impl;
 
-import java.io.ByteArrayInputStream;
-import java.security.Signature;
-import java.security.cert.CertificateFactory;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,8 +14,6 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriInfo;
 
-import org.apache.commons.codec.binary.Base64;
-import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.exception.ExceptionUtils;
 import org.apache.ojb.broker.core.proxy.ListProxyDefaultImpl;
 import org.codehaus.jackson.map.DeserializationConfig;
@@ -31,6 +27,9 @@ import org.kuali.rice.core.api.config.property.ConfigContext;
 import org.kuali.rice.core.api.resourceloader.GlobalResourceLoader;
 import org.kuali.rice.core.api.util.type.TypeUtils;
 import org.kuali.rice.coreservice.framework.parameter.ParameterService;
+import org.kuali.rice.kim.api.KimConstants;
+import org.kuali.rice.kim.api.permission.PermissionService;
+import org.kuali.rice.kim.api.services.KimApiServiceLocator;
 import org.kuali.rice.kns.datadictionary.InquirySectionDefinition;
 import org.kuali.rice.kns.lookup.LookupableHelperService;
 import org.kuali.rice.krad.UserSession;
@@ -53,6 +52,7 @@ public class DataObjectRestServiceImpl implements DataObjectRestService {
 	private DataDictionaryService dataDictionaryService;
 	private PersistenceStructureService persistenceStructureService;
     private ParameterService parameterService;
+    private PermissionService permissionService;
 	private static final String ERROR_PAGE = "<html> <head> <title>Error report</title> <style> <!-- H1 { font-family: Tahoma, Arial, sans-serif; color: white; background-color: #525D76; font-size: 22px; }  H2 { font-family: Tahoma, Arial, sans-serif; color: white; background-color: #525D76; font-size: 16px; }  H3 { font-family: Tahoma, Arial, sans-serif; color: white; background-color: #525D76; font-size: 14px; }  BODY { font-family: Tahoma, Arial, sans-serif; color: black; background-color: white; }  B { font-family: Tahoma, Arial, sans-serif; color: white; background-color: #525D76; }  P,DIV { font-family: Tahoma, Arial, sans-serif; background: white; color: black; font-size: 12px; }  A { color: black; }  A.name { color: black; }  HR { color: #525D76; } --> </style> </head> <body> <h1>HTTP Status [STATUS] - [URI]</h1> <HR size='1' noshade='noshade'> <p> <b>type</b> Status report </p> <p> <b>message</b> <u>[URI]</u> </p> <p> <b>description</b> <u>[DESC]</u> </p> <HR size='1' noshade='noshade'> <div>[EXCEPTION]</div></body> </html>";
 
 	private static final String STATUS = "[STATUS]";
@@ -68,10 +68,21 @@ public class DataObjectRestServiceImpl implements DataObjectRestService {
     @Override
     public Response getDataObjects(String namespace, String dataobject, String type, UriInfo info, HttpHeaders headers, HttpServletRequest request) throws Exception {
         try {
+            FinancialSystemBusinessObjectEntry boe = null;
+            try {
+                boe = (FinancialSystemBusinessObjectEntry) getDataDictionaryService().getDictionaryObject(dataobject);
+            } catch (NoSuchBeanDefinitionException e) {
+                LOG.debug("Failed to retrieve data dictionary object.", e);
+            }
+
             // check for https (will be ignored in dev mode), authorization
-            if ((!ConfigContext.getCurrentContextConfig().getDevMode() && !info.getRequestUri().toString().toUpperCase().startsWith("HTTPS")) ||
-                    !isAuthorized(headers, request)) {
+            if ((!ConfigContext.getCurrentContextConfig().getDevMode() && !request.isSecure()) ||
+                    !isAuthorized(request, boe)) {
                 return Response.status(Response.Status.FORBIDDEN).entity(generateErrorResponse(Response.Status.FORBIDDEN.getStatusCode() + "", info.getRequestUri().getPath(), Response.Status.FORBIDDEN.getReasonPhrase())).build();
+            }
+
+            if (boe == null) {
+                return Response.status(Response.Status.BAD_REQUEST).entity(generateErrorResponse(Response.Status.BAD_REQUEST.getStatusCode() + "", info.getRequestUri().getPath(), Response.Status.BAD_REQUEST.getReasonPhrase())).build();
             }
 
             DataType dataType = null;
@@ -79,14 +90,6 @@ public class DataObjectRestServiceImpl implements DataObjectRestService {
                 dataType = DataType.valueOf(type.toUpperCase());
             } catch (IllegalArgumentException e) {
                 LOG.debug("Unknown data type.", e);
-            }
-
-            FinancialSystemBusinessObjectEntry boe = null;
-            try {
-                boe = (FinancialSystemBusinessObjectEntry) getDataDictionaryService().getDictionaryObject(dataobject);
-            } catch (NoSuchBeanDefinitionException e) {
-                LOG.debug("Failed to retrieve data dictionary object.", e);
-                return Response.status(Response.Status.BAD_REQUEST).entity(generateErrorResponse(Response.Status.BAD_REQUEST.getStatusCode() + "", info.getRequestUri().getPath(), Response.Status.BAD_REQUEST.getReasonPhrase())).build();
             }
 
             Boolean isModuleLocked = getParameterService().getParameterValueAsBoolean(namespace, KfsParameterConstants.PARAMETER_ALL_DETAIL_TYPE, KRADConstants.SystemGroupParameterNames.OLTP_LOCKOUT_ACTIVE_IND);
@@ -182,28 +185,30 @@ public class DataObjectRestServiceImpl implements DataObjectRestService {
         return Response.status(Response.Status.FORBIDDEN).entity(generateErrorResponse(Response.Status.FORBIDDEN.getStatusCode() + "", info.getRequestUri().getPath(), Response.Status.FORBIDDEN.getReasonPhrase())).build();
     }
 
-	protected boolean isAuthorized(HttpHeaders headers, HttpServletRequest request) throws Exception {
-	    if (request != null) {
+	protected boolean isAuthorized(HttpServletRequest request, FinancialSystemBusinessObjectEntry boe) throws Exception {
+	    if (request != null && boe != null) {
     	    UserSession userSession = KRADUtils.getUserSessionFromRequest(request);
             if (userSession != null && GlobalVariables.getUserSession().getKualiSessionId().equals(userSession.getKualiSessionId())) {
-    	        return true; // TODO: Verify role?
+                Class businessObjectClass = boe.getBusinessObjectClass();
+                return getPermissionService().isAuthorizedByTemplate(
+                        GlobalVariables.getUserSession().getPrincipalId(), KRADConstants.KNS_NAMESPACE,
+                        KimConstants.PermissionTemplateNames.LOOK_UP_RECORDS,
+                        KRADUtils.getNamespaceAndComponentSimpleName(businessObjectClass),
+                        Collections.<String, String>emptyMap());
     	    }
-	    }
-
-        if (verifySignature(headers)) {
-	        return true;
 	    }
 
         return false;
 	}
 
+	/*
 	protected boolean verifySignature(HttpHeaders headers) {
 	    try {
     	    String encodedSignature = headers.getRequestHeader(KSBConstants.DIGITAL_SIGNATURE_HEADER).get(0);
-    	    String verificationAlias = headers.getRequestHeader(KSBConstants.KEYSTORE_ALIAS_HEADER).get(0);
     	    String encodedCertificate = headers.getRequestHeader(KSBConstants.KEYSTORE_CERTIFICATE_HEADER).get(0);
+    	    //String verificationAlias = headers.getRequestHeader(KSBConstants.KEYSTORE_ALIAS_HEADER).get(0);
 
-            Signature verifySig = null;
+    	    Signature verifySig = null;
             byte[] digitalSignature = null;
 
             digitalSignature = Base64.decodeBase64(encodedSignature.getBytes("UTF-8"));
@@ -211,9 +216,9 @@ public class DataObjectRestServiceImpl implements DataObjectRestService {
                 byte[] certificate = Base64.decodeBase64(encodedCertificate.getBytes("UTF-8"));
                 CertificateFactory cf = CertificateFactory.getInstance("X.509");
                 verifySig = getDigitalSignatureService().getSignatureForVerification(cf.generateCertificate(new ByteArrayInputStream(certificate)));
-            } else if (StringUtils.isNotBlank(verificationAlias)) {
-                verifySig = getDigitalSignatureService().getSignatureForVerification(verificationAlias);
-            }
+            }// else if (StringUtils.isNotBlank(verificationAlias)) {
+                //verifySig = getDigitalSignatureService().getSignatureForVerification(verificationAlias);
+            //}
 
             return verifySig.verify(digitalSignature);
         } catch (Exception e) {
@@ -221,7 +226,7 @@ public class DataObjectRestServiceImpl implements DataObjectRestService {
         }
 
         return false;
-    }
+    }*/
 
     @Override
     public Response getDataObjectsByModule(String namespace, UriInfo info) throws Exception {
@@ -284,6 +289,17 @@ public class DataObjectRestServiceImpl implements DataObjectRestService {
 
     protected DigitalSignatureService getDigitalSignatureService() {
         return (DigitalSignatureService) GlobalResourceLoader.getService(KSBConstants.ServiceNames.DIGITAL_SIGNATURE_SERVICE);
+    }
+
+    public PermissionService getPermissionService() {
+        if(permissionService == null) {
+            permissionService = KimApiServiceLocator.getPermissionService();
+        }
+        return permissionService;
+    }
+
+    public void setPermissionService(PermissionService permissionService) {
+        this.permissionService = permissionService;
     }
 
 }
