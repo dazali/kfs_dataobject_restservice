@@ -15,7 +15,6 @@
  */
 package org.kuali.kfs.sys.web.controller;
 
-import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -33,6 +32,7 @@ import org.kuali.kfs.sys.businessobject.datadictionary.FinancialSystemBusinessOb
 import org.kuali.kfs.sys.businessobject.lookup.LookupableSpringContext;
 import org.kuali.kfs.sys.context.SpringContext;
 import org.kuali.kfs.sys.service.impl.KfsParameterConstants;
+import org.kuali.kfs.sys.util.RestXmlUtil;
 import org.kuali.rice.core.api.config.property.ConfigContext;
 import org.kuali.rice.core.api.util.type.TypeUtils;
 import org.kuali.rice.coreservice.framework.parameter.ParameterService;
@@ -64,13 +64,6 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 
-import com.thoughtworks.xstream.XStream;
-import com.thoughtworks.xstream.converters.Converter;
-import com.thoughtworks.xstream.converters.MarshallingContext;
-import com.thoughtworks.xstream.converters.UnmarshallingContext;
-import com.thoughtworks.xstream.io.HierarchicalStreamReader;
-import com.thoughtworks.xstream.io.HierarchicalStreamWriter;
-
 @Controller
 public class DataObjectRestServiceController extends DocumentControllerBase {
 
@@ -80,36 +73,6 @@ public class DataObjectRestServiceController extends DocumentControllerBase {
     private PersistenceStructureService persistenceStructureService;
     private ParameterService parameterService;
     private PermissionService permissionService;
-
-    public static class MapEntryConverter implements Converter {
-        @Override
-        public boolean canConvert(Class clazz) {
-            return AbstractMap.class.isAssignableFrom(clazz);
-        }
-
-        @Override
-        public void marshal(Object value, HierarchicalStreamWriter writer, MarshallingContext context) {
-            AbstractMap map = (AbstractMap) value;
-            for (Object obj : map.entrySet()) {
-                Map.Entry entry = (Map.Entry) obj;
-                writer.startNode(entry.getKey().toString());
-                writer.setValue(entry.getValue().toString());
-                writer.endNode();
-            }
-        }
-
-        @Override
-        public Object unmarshal(HierarchicalStreamReader reader, UnmarshallingContext context) {
-            Map<String, String> map = new HashMap<String, String>();
-            while (reader.hasMoreChildren()) {
-                reader.moveDown();
-                map.put(reader.getNodeName(), reader.getValue());
-                reader.moveUp();
-            }
-
-            return map;
-        }
-    }
 
     @Override
     protected DocumentFormBase createInitialForm(HttpServletRequest request) {
@@ -149,10 +112,12 @@ public class DataObjectRestServiceController extends DocumentControllerBase {
 
             String jsonData = null;
             if (resultMap.size() == 1) {
-                jsonData = mapper.defaultPrettyPrintingWriter().writeValueAsString(resultMap.get(0))
+                jsonData = mapper.defaultPrettyPrintingWriter()
+                        .writeValueAsString(resultMap.get(0))
                         .replaceFirst(HashMap.class.getSimpleName(), boe.getBusinessObjectClass().getName());
             } else {
-                jsonData = mapper.defaultPrettyPrintingWriter().writeValueAsString(resultMap)
+                jsonData = mapper.defaultPrettyPrintingWriter()
+                        .writeValueAsString(resultMap)
                         .replaceFirst(ArrayList.class.getSimpleName(), ArrayList.class.getSimpleName()+"<"+boe.getBusinessObjectClass().getName()+">");
             }
 
@@ -171,16 +136,11 @@ public class DataObjectRestServiceController extends DocumentControllerBase {
         try {
             List<Map<String, String>> resultMap = generateResultMap(request, boe);
 
-            XStream xStream = new XStream();
-            xStream.registerConverter(new MapEntryConverter());
-            xStream.alias(List.class.getName(), List.class);
-            xStream.alias(boe.getBusinessObjectClass().getName(), Map.class);
-
             String xml = null;
             if (resultMap.size() == 1) {
-                xml = xStream.toXML(resultMap.get(0));
+                xml = RestXmlUtil.toXML(boe.getBusinessObjectClass().getName(), resultMap.get(0));
             } else {
-                xml = xStream.toXML(resultMap);
+                xml = RestXmlUtil.toXML(boe.getBusinessObjectClass().getName(), resultMap);
             }
 
             return new ResponseEntity<String>(xml, HttpStatus.OK);
@@ -207,15 +167,22 @@ public class DataObjectRestServiceController extends DocumentControllerBase {
 
             resultMap.add(objectMap);
         }
+
         return resultMap;
     }
 
     protected boolean isAuthorized(HttpServletRequest request, FinancialSystemBusinessObjectEntry boe) throws Exception {
         if (request != null && boe != null) {
-            UserSession userSession = KRADUtils.getUserSessionFromRequest(request);
-            if (userSession != null && GlobalVariables.getUserSession().getKualiSessionId().equals(userSession.getKualiSessionId())) {
+            UserSession clientUserSession = KRADUtils.getUserSessionFromRequest(request);
+            UserSession serverUserSession = GlobalVariables.getUserSession();
+
+            if (clientUserSession == null || serverUserSession == null) {
+                return false;
+            }
+
+            if (serverUserSession.getKualiSessionId().equals(clientUserSession.getKualiSessionId())) {
                 Class businessObjectClass = boe.getBusinessObjectClass();
-                return getPermissionService().isAuthorizedByTemplate(GlobalVariables.getUserSession().getPrincipalId(), KRADConstants.KNS_NAMESPACE, KimConstants.PermissionTemplateNames.LOOK_UP_RECORDS, KRADUtils.getNamespaceAndComponentSimpleName(businessObjectClass), Collections.<String, String> emptyMap());
+                return getPermissionService().isAuthorizedByTemplate(serverUserSession.getPrincipalId(), KRADConstants.KNS_NAMESPACE, KimConstants.PermissionTemplateNames.LOOK_UP_RECORDS, KRADUtils.getNamespaceAndComponentSimpleName(businessObjectClass), Collections.<String, String> emptyMap());
             }
         }
 
@@ -239,6 +206,7 @@ public class DataObjectRestServiceController extends DocumentControllerBase {
         for (InquirySectionDefinition section : boe.getInquiryDefinition().getInquirySections()) {
             inquiryFields.addAll(section.getInquiryFieldNames());
         }
+
         return inquiryFields;
     }
 
@@ -252,13 +220,12 @@ public class DataObjectRestServiceController extends DocumentControllerBase {
         LookupableHelperService lookupableHelperService = getLookupableHelperService(boe.getLookupDefinition().getLookupableID());
         lookupableHelperService.setBusinessObjectClass(boe.getBusinessObjectClass());
 
-        List<? extends BusinessObject> results = lookupableHelperService.getSearchResults(fieldValues);
-        return results;
+        return lookupableHelperService.getSearchResults(fieldValues);
     }
 
     protected void validateRequest(FinancialSystemBusinessObjectEntry boe, String namespace, String dataobject, HttpServletRequest request) throws Exception {
         // check for https (will be ignored in dev mode), authorization
-        if ((!ConfigContext.getCurrentContextConfig().getDevMode() && !request.isSecure()) || !isAuthorized(request, boe)) {
+        if ((!ConfigContext.getCurrentContextConfig().getDevMode() && !request.isSecure())) {
              throw new AccessDeniedException("Not authorized.");
         }
 
@@ -267,19 +234,19 @@ public class DataObjectRestServiceController extends DocumentControllerBase {
         }
 
         Boolean isModuleLocked = getParameterService().getParameterValueAsBoolean(namespace, KfsParameterConstants.PARAMETER_ALL_DETAIL_TYPE, KRADConstants.SystemGroupParameterNames.OLTP_LOCKOUT_ACTIVE_IND);
-        if (isModuleLocked || !boe.hasInquiryDefinition()) {
+        if (!isAuthorized(request, boe) || isModuleLocked || !boe.hasInquiryDefinition()) {
             throw new AccessDeniedException("Not authorized.");
         }
     }
 
     protected FinancialSystemBusinessObjectEntry getBusinessObject(String dataobject) {
-        FinancialSystemBusinessObjectEntry boe = null;
         try {
-            boe = (FinancialSystemBusinessObjectEntry) getDataDictionaryService().getDictionaryObject(dataobject);
+            return (FinancialSystemBusinessObjectEntry) getDataDictionaryService().getDictionaryObject(dataobject);
         } catch (NoSuchBeanDefinitionException e) {
             LOG.debug("Failed to retrieve data dictionary object.", e);
         }
-        return boe;
+
+        return null;
     }
 
     protected LookupableHelperService getLookupableHelperService(String lookupableID) {
