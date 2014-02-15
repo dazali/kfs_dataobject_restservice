@@ -15,6 +15,7 @@
  */
 package org.kuali.kfs.sys.web.controller;
 
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -22,9 +23,12 @@ import java.util.List;
 import java.util.Map;
 
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 
 import org.apache.commons.lang.exception.ExceptionUtils;
-import org.apache.ojb.broker.core.proxy.ListProxyDefaultImpl;
+import org.codehaus.jackson.map.DeserializationConfig;
+import org.codehaus.jackson.map.ObjectMapper;
+import org.codehaus.jackson.map.SerializationConfig;
 import org.kuali.kfs.sys.businessobject.datadictionary.FinancialSystemBusinessObjectEntry;
 import org.kuali.kfs.sys.businessobject.lookup.LookupableSpringContext;
 import org.kuali.kfs.sys.context.SpringContext;
@@ -51,11 +55,21 @@ import org.kuali.rice.krad.web.form.DocumentFormBase;
 import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.bind.annotation.ResponseStatus;
+
+import com.thoughtworks.xstream.XStream;
+import com.thoughtworks.xstream.converters.Converter;
+import com.thoughtworks.xstream.converters.MarshallingContext;
+import com.thoughtworks.xstream.converters.UnmarshallingContext;
+import com.thoughtworks.xstream.io.HierarchicalStreamReader;
+import com.thoughtworks.xstream.io.HierarchicalStreamWriter;
 
 @Controller
 public class DataObjectRestServiceController extends DocumentControllerBase {
@@ -67,6 +81,36 @@ public class DataObjectRestServiceController extends DocumentControllerBase {
     private ParameterService parameterService;
     private PermissionService permissionService;
 
+    public static class MapEntryConverter implements Converter {
+        @Override
+        public boolean canConvert(Class clazz) {
+            return AbstractMap.class.isAssignableFrom(clazz);
+        }
+
+        @Override
+        public void marshal(Object value, HierarchicalStreamWriter writer, MarshallingContext context) {
+            AbstractMap map = (AbstractMap) value;
+            for (Object obj : map.entrySet()) {
+                Map.Entry entry = (Map.Entry) obj;
+                writer.startNode(entry.getKey().toString());
+                writer.setValue(entry.getValue().toString());
+                writer.endNode();
+            }
+        }
+
+        @Override
+        public Object unmarshal(HierarchicalStreamReader reader, UnmarshallingContext context) {
+            Map<String, String> map = new HashMap<String, String>();
+            while (reader.hasMoreChildren()) {
+                reader.moveDown();
+                map.put(reader.getNodeName(), reader.getValue());
+                reader.moveUp();
+            }
+
+            return map;
+        }
+    }
+
     @Override
     protected DocumentFormBase createInitialForm(HttpServletRequest request) {
         DocumentFormBase form = new DocumentFormBase();
@@ -74,88 +118,96 @@ public class DataObjectRestServiceController extends DocumentControllerBase {
         return form;
     }
 
+    @ExceptionHandler(AccessDeniedException.class)
+    @ResponseStatus(value = HttpStatus.FORBIDDEN, reason = "Not authorized.")
+    public void handleAccessDeniedException(AccessDeniedException ex, HttpServletResponse response) {
+    }
+
+    @ExceptionHandler(NoSuchBeanDefinitionException.class)
+    @ResponseStatus(value = HttpStatus.BAD_REQUEST, reason = "Data object not found.")
+    public void handleNoSuchBeanDefinitionException(NoSuchBeanDefinitionException ex, HttpServletResponse response) {
+    }
+
+    @ExceptionHandler(RuntimeException.class)
+    @ResponseStatus(value = HttpStatus.INTERNAL_SERVER_ERROR, reason = "Unexpected exception has occured.")
+    public String handleRuntimeException(RuntimeException ex, HttpServletResponse response) {
+        return ExceptionUtils.getStackTrace(ex);
+    }
+
     @RequestMapping(value = "/{namespace}/{dataobject}.json", method = RequestMethod.GET, produces = "application/json")
     @ResponseBody
-    public ResponseEntity<?> getDataObjectsAsJSON(@PathVariable("namespace") String namespace, @PathVariable("dataobject") String dataobject, HttpServletRequest request) throws Exception {
+    public ResponseEntity<String> getDataObjectsAsJSON(@PathVariable("namespace") String namespace, @PathVariable("dataobject") String dataobject, HttpServletRequest request) throws Exception {
+        FinancialSystemBusinessObjectEntry boe = getBusinessObject(dataobject);
+        validateRequest(boe, namespace, dataobject, request);
+
         try {
-            FinancialSystemBusinessObjectEntry boe = getBusinessObject(dataobject);
+            List<Map<String, String>> resultMap = generateResultMap(request, boe);
 
-            HttpStatus status = validateRequest(boe, namespace, dataobject, request);
-            if (!status.equals(HttpStatus.OK)) {
-                return new ResponseEntity<String>(generateErrorResponse(status.toString(), request.getRequestURI(), status.getReasonPhrase()), status);
-            }
+            ObjectMapper mapper = new ObjectMapper();
+            mapper.configure(DeserializationConfig.Feature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+            mapper.configure(SerializationConfig.Feature.WRAP_ROOT_VALUE, true);
 
-            List<? extends BusinessObject> results = getSearchResults(request, boe);
-            List<String> inquiryFields = getInquiryFields(boe);
-
-            List<Map<String, Object>> resultMap = new ArrayList<Map<String, Object>>();
-            for (BusinessObject bo : results) {
-                Map<String, Object> objectMap = new HashMap<String, Object>();
-                Object object = ObjectUtils.createNewObjectFromClass(boe.getBusinessObjectClass());
-                for (String propertyName : inquiryFields) {
-                    Object propertyValue = ObjectUtils.getPropertyValue(bo, propertyName);
-                    Class<?> propertyType = ObjectUtils.getPropertyType(bo, propertyName, getPersistenceStructureService());
-                    if (isPropertyTypeValid(propertyType)) {
-                        objectMap.put(propertyName, propertyValue);
-                    }
-                }
-
-                resultMap.add(objectMap);
-            }
-
+            String jsonData = null;
             if (resultMap.size() == 1) {
-                return new ResponseEntity(resultMap.get(0), HttpStatus.OK);
+                jsonData = mapper.defaultPrettyPrintingWriter().writeValueAsString(resultMap.get(0))
+                        .replaceFirst(HashMap.class.getSimpleName(), boe.getBusinessObjectClass().getName());
             } else {
-                return new ResponseEntity(resultMap, HttpStatus.OK);
+                jsonData = mapper.defaultPrettyPrintingWriter().writeValueAsString(resultMap)
+                        .replaceFirst(ArrayList.class.getSimpleName(), ArrayList.class.getSimpleName()+"<"+boe.getBusinessObjectClass().getName()+">");
             }
+
+            return new ResponseEntity<String>(jsonData, HttpStatus.OK);
         } catch (Exception e) {
-            LOG.debug("Unexpected exception has occured.", e);
-            return new ResponseEntity<String>(generateErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.toString(), request.getRequestURI(), HttpStatus.INTERNAL_SERVER_ERROR.getReasonPhrase(), e), HttpStatus.INTERNAL_SERVER_ERROR);
+            throw new RuntimeException("Unexpected exception has occured.");
         }
     }
 
     @RequestMapping(value = "/{namespace}/{dataobject}.xml", method = RequestMethod.GET, produces = "application/xml")
     @ResponseBody
     public ResponseEntity<String> getDataObjectsAsXML(@PathVariable("namespace") String namespace, @PathVariable("dataobject") String dataobject, HttpServletRequest request) throws Exception {
+        FinancialSystemBusinessObjectEntry boe = getBusinessObject(dataobject);
+        validateRequest(boe, namespace, dataobject, request);
+
         try {
-            FinancialSystemBusinessObjectEntry boe = getBusinessObject(dataobject);
+            List<Map<String, String>> resultMap = generateResultMap(request, boe);
 
-            HttpStatus status = validateRequest(boe, namespace, dataobject, request);
-            if (!status.equals(HttpStatus.OK)) {
-                return new ResponseEntity<String>(generateErrorResponse(status.toString(), request.getRequestURI(), status.getReasonPhrase()), status);
-            }
-
-            List<? extends BusinessObject> results = getSearchResults(request, boe);
-            List<String> inquiryFields = getInquiryFields(boe);
-
-            List<Object> objects = new ArrayList<Object>();
-            for (BusinessObject bo : results) {
-                Object object = ObjectUtils.createNewObjectFromClass(boe.getBusinessObjectClass());
-                for (String propertyName : inquiryFields) {
-                    Object propertyValue = ObjectUtils.getPropertyValue(bo, propertyName);
-                    Class<?> propertyType = ObjectUtils.getPropertyType(bo, propertyName, getPersistenceStructureService());
-                    if (isPropertyTypeValid(propertyType)) {
-                        if (!propertyName.contains(".")) {
-                            ObjectUtils.setObjectProperty(object, propertyName, propertyValue);
-                        }
-                    }
-                }
-
-                objects.add(object);
-            }
+            XStream xStream = new XStream();
+            xStream.registerConverter(new MapEntryConverter());
+            xStream.alias(List.class.getName(), List.class);
+            xStream.alias(boe.getBusinessObjectClass().getName(), Map.class);
 
             String xml = null;
-            if (objects.size() == 1) {
-                xml = getXmlObjectSerializerService().toXml(objects.get(0));
+            if (resultMap.size() == 1) {
+                xml = xStream.toXML(resultMap.get(0));
             } else {
-                xml = getXmlObjectSerializerService().toXml(objects).replaceAll(ListProxyDefaultImpl.class.getName(), List.class.getName());
+                xml = xStream.toXML(resultMap);
             }
 
             return new ResponseEntity<String>(xml, HttpStatus.OK);
         } catch (Exception e) {
-            LOG.debug("Unexpected exception has occured.", e);
-            return new ResponseEntity<String>(generateErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.toString(), request.getRequestURI(), HttpStatus.INTERNAL_SERVER_ERROR.getReasonPhrase(), e), HttpStatus.INTERNAL_SERVER_ERROR);
+            throw new RuntimeException("Unexpected exception has occured.");
         }
+    }
+
+    protected List<Map<String, String>> generateResultMap(HttpServletRequest request, FinancialSystemBusinessObjectEntry boe) {
+        List<? extends BusinessObject> results = getSearchResults(request, boe);
+        List<String> inquiryFields = getInquiryFields(boe);
+
+        List<Map<String, String>> resultMap = new ArrayList<Map<String, String>>();
+        for (BusinessObject bo : results) {
+            Map<String, String> objectMap = new HashMap<String, String>();
+            Object object = ObjectUtils.createNewObjectFromClass(boe.getBusinessObjectClass());
+            for (String propertyName : inquiryFields) {
+                Object propertyValue = ObjectUtils.getPropertyValue(bo, propertyName);
+                Class<?> propertyType = ObjectUtils.getPropertyType(bo, propertyName, getPersistenceStructureService());
+                if (isPropertyTypeValid(propertyType)) {
+                    objectMap.put(propertyName, propertyValue + "");
+                }
+            }
+
+            resultMap.add(objectMap);
+        }
+        return resultMap;
     }
 
     protected boolean isAuthorized(HttpServletRequest request, FinancialSystemBusinessObjectEntry boe) throws Exception {
@@ -170,15 +222,7 @@ public class DataObjectRestServiceController extends DocumentControllerBase {
         return false;
     }
 
-    protected String generateErrorResponse(String statusCode, String uri, String desc) {
-        return generateErrorResponse(statusCode, uri, desc, null);
-    }
-
-    protected String generateErrorResponse(String statusCode, String uri, String desc, Exception e) {
-        return statusCode + " - " + desc + ": " + uri + "\n" + (e != null ? ExceptionUtils.getStackTrace(e) : "");
-    }
-
-    private boolean isPropertyTypeValid(Class<?> propertyType) {
+    protected boolean isPropertyTypeValid(Class<?> propertyType) {
         if (propertyType != null && (TypeUtils.isStringClass(propertyType)
                 || TypeUtils.isIntegralClass(propertyType)
                 || TypeUtils.isDecimalClass(propertyType)
@@ -190,7 +234,7 @@ public class DataObjectRestServiceController extends DocumentControllerBase {
         return false;
     }
 
-    private List<String> getInquiryFields(FinancialSystemBusinessObjectEntry boe) {
+    protected List<String> getInquiryFields(FinancialSystemBusinessObjectEntry boe) {
         List<String> inquiryFields = new ArrayList<String>();
         for (InquirySectionDefinition section : boe.getInquiryDefinition().getInquirySections()) {
             inquiryFields.addAll(section.getInquiryFieldNames());
@@ -198,7 +242,7 @@ public class DataObjectRestServiceController extends DocumentControllerBase {
         return inquiryFields;
     }
 
-    private List<? extends BusinessObject> getSearchResults(HttpServletRequest request, FinancialSystemBusinessObjectEntry boe) {
+    protected List<? extends BusinessObject> getSearchResults(HttpServletRequest request, FinancialSystemBusinessObjectEntry boe) {
         Map<String, String> fieldValues = new HashMap<String, String>();
         for (Object o : request.getParameterMap().keySet()) {
             String[] value = (String[]) request.getParameterMap().get(o);
@@ -212,25 +256,23 @@ public class DataObjectRestServiceController extends DocumentControllerBase {
         return results;
     }
 
-    private HttpStatus validateRequest(FinancialSystemBusinessObjectEntry boe, String namespace, String dataobject, HttpServletRequest request) throws Exception {
+    protected void validateRequest(FinancialSystemBusinessObjectEntry boe, String namespace, String dataobject, HttpServletRequest request) throws Exception {
         // check for https (will be ignored in dev mode), authorization
         if ((!ConfigContext.getCurrentContextConfig().getDevMode() && !request.isSecure()) || !isAuthorized(request, boe)) {
-            return HttpStatus.FORBIDDEN;
+             throw new AccessDeniedException("Not authorized.");
         }
 
         if (boe == null) {
-            return HttpStatus.BAD_REQUEST;
+            throw new NoSuchBeanDefinitionException("Data object not found.");
         }
 
         Boolean isModuleLocked = getParameterService().getParameterValueAsBoolean(namespace, KfsParameterConstants.PARAMETER_ALL_DETAIL_TYPE, KRADConstants.SystemGroupParameterNames.OLTP_LOCKOUT_ACTIVE_IND);
         if (isModuleLocked || !boe.hasInquiryDefinition()) {
-            return HttpStatus.FORBIDDEN;
+            throw new AccessDeniedException("Not authorized.");
         }
-
-        return HttpStatus.OK;
     }
 
-    private FinancialSystemBusinessObjectEntry getBusinessObject(String dataobject) {
+    protected FinancialSystemBusinessObjectEntry getBusinessObject(String dataobject) {
         FinancialSystemBusinessObjectEntry boe = null;
         try {
             boe = (FinancialSystemBusinessObjectEntry) getDataDictionaryService().getDictionaryObject(dataobject);
@@ -242,7 +284,6 @@ public class DataObjectRestServiceController extends DocumentControllerBase {
 
     protected LookupableHelperService getLookupableHelperService(String lookupableID) {
         LookupableHelperService lookupableHelperService = LookupableSpringContext.getLookupable(lookupableID).getLookupableHelperService();
-
         return lookupableHelperService;
     }
 
