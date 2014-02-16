@@ -43,7 +43,6 @@ import org.kuali.rice.kns.datadictionary.InquirySectionDefinition;
 import org.kuali.rice.kns.lookup.LookupableHelperService;
 import org.kuali.rice.krad.UserSession;
 import org.kuali.rice.krad.bo.BusinessObject;
-import org.kuali.rice.krad.service.DataDictionaryService;
 import org.kuali.rice.krad.service.PersistenceStructureService;
 import org.kuali.rice.krad.service.XmlObjectSerializerService;
 import org.kuali.rice.krad.util.GlobalVariables;
@@ -69,7 +68,6 @@ public class DataObjectRestServiceController extends DocumentControllerBase {
 
     private static org.apache.log4j.Logger LOG = org.apache.log4j.Logger.getLogger(DataObjectRestServiceController.class);
 
-    private DataDictionaryService dataDictionaryService;
     private PersistenceStructureService persistenceStructureService;
     private ParameterService parameterService;
     private PermissionService permissionService;
@@ -138,9 +136,9 @@ public class DataObjectRestServiceController extends DocumentControllerBase {
 
             String xml = null;
             if (resultMap.size() == 1) {
-                xml = RestXmlUtil.toXML(boe.getBusinessObjectClass().getName(), resultMap.get(0));
+                xml = RestXmlUtil.toXML(boe, resultMap.get(0));
             } else {
-                xml = RestXmlUtil.toXML(boe.getBusinessObjectClass().getName(), resultMap);
+                xml = RestXmlUtil.toXML(boe, resultMap);
             }
 
             return new ResponseEntity<String>(xml, HttpStatus.OK);
@@ -252,19 +250,6 @@ public class DataObjectRestServiceController extends DocumentControllerBase {
     protected LookupableHelperService getLookupableHelperService(String lookupableID) {
         LookupableHelperService lookupableHelperService = LookupableSpringContext.getLookupable(lookupableID).getLookupableHelperService();
         return lookupableHelperService;
-    }
-
-    @Override
-    public DataDictionaryService getDataDictionaryService() {
-        if (dataDictionaryService == null) {
-            dataDictionaryService = SpringContext.getBean(DataDictionaryService.class);
-        }
-        return dataDictionaryService;
-    }
-
-    @Override
-    public void setDataDictionaryService(DataDictionaryService dataDictionaryService) {
-        this.dataDictionaryService = dataDictionaryService;
     }
 
     public PersistenceStructureService getPersistenceStructureService() {

@@ -15,12 +15,29 @@
  */
 package org.kuali.kfs.sys.util;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+
+import org.apache.commons.lang.time.DateUtils;
+import org.kuali.kfs.sys.context.SpringContext;
+import org.kuali.rice.core.api.util.type.TypeUtils;
+import org.kuali.rice.krad.datadictionary.DataObjectEntry;
+import org.kuali.rice.krad.service.DataDictionaryService;
+import org.kuali.rice.krad.service.KRADServiceLocatorWeb;
+import org.kuali.rice.krad.service.PersistenceStructureService;
+import org.kuali.rice.krad.util.ObjectUtils;
 
 import com.thoughtworks.xstream.XStream;
 
 public class RestXmlUtil {
+
+    private static org.apache.log4j.Logger LOG = org.apache.log4j.Logger.getLogger(RestXmlUtil.class);
+
+    private DataDictionaryService dataDictionaryService;
+
+    private static final String[] DATE_FORMAT = {"MM/dd/yyyy", "yyyy-MM-dd"};
 
     /**
      *
@@ -30,8 +47,8 @@ public class RestXmlUtil {
      * @param o
      * @return
      */
-    public static String toXML(String boName, Object o) {
-        XStream xStream = getXStream(boName);
+    public static String toXML(DataObjectEntry doe, Object o) {
+        XStream xStream = getXStream(doe.getDataObjectClass().getName());
 
         return xStream.toXML(o);
     }
@@ -44,18 +61,93 @@ public class RestXmlUtil {
      * @param xml
      * @return
      */
-    public static Object fromXML(String boName, String xml) {
-        XStream xStream = getXStream(boName);
+    public static Object fromXML(DataObjectEntry doe, String xml) {
+        XStream xStream = getXStream(doe.getDataObjectClass().getName());
 
         return xStream.fromXML(xml);
     }
 
-    protected static XStream getXStream(String boName) {
+    /**
+     *
+     * This method parses the xml back to list of business objects.
+     *
+     * @param doe
+     * @param xml
+     * @return
+     * @throws Exception
+     */
+    public static List<?> parseXML(DataObjectEntry doe, String xml) {
+        List<Object> list = new ArrayList<Object>();
+
+        Object fromXML = fromXML(doe, xml);
+        if (fromXML instanceof Collection) {
+            Collection<Object> c = (Collection<Object>)fromXML;
+
+            for (Object o : c) {
+                Map<?,?> m = (Map<?,?>) o;
+                list.add(populateBusinessObject(doe, m));
+            }
+        } else if (fromXML instanceof Map) {
+            Map<?,?> m = (Map<?,?>)fromXML;
+            list.add(populateBusinessObject(doe, m));
+        }
+
+        return list;
+    }
+
+    protected static Object populateBusinessObject(DataObjectEntry doe, Map<?,?> m) {
+        Object bo = ObjectUtils.createNewObjectFromClass(doe.getDataObjectClass());
+        PersistenceStructureService persistenceStructureService = SpringContext.getBean(PersistenceStructureService.class);
+
+        for (Object key : m.keySet()) {
+            String propertyName = (String) key;
+            Class<?> propertyType = ObjectUtils.getPropertyType(bo, propertyName, persistenceStructureService);
+
+            if (propertyType != null) {
+                try {
+                    Object propertyValue = m.get(key);
+                    if (propertyValue != null && !propertyValue.equals("null")) {
+                        String value = (String) propertyValue;
+                        if (TypeUtils.isIntegralClass(propertyType)) {
+                            propertyValue = Integer.parseInt(value);
+                        } else if (TypeUtils.isDecimalClass(propertyType)) {
+                            propertyValue = Float.parseFloat(value);
+                        } else if (TypeUtils.isTemporalClass(propertyType)) {
+                            propertyValue = KfsDateUtils.convertToSqlDate(DateUtils.parseDate(value, DATE_FORMAT));
+                        } else if (TypeUtils.isBooleanClass(propertyType)) {
+                            propertyValue = Boolean.parseBoolean(value);
+                        }
+                    } else {
+                        propertyValue = null;
+                    }
+
+                    ObjectUtils.setObjectProperty(bo, propertyName, propertyValue);
+                } catch (Exception ex) {
+                    LOG.error(ex);
+                }
+            }
+        }
+
+        return bo;
+    }
+
+    protected static XStream getXStream(String className) {
         XStream xStream = new XStream();
         xStream.registerConverter(new MapEntryConverter());
         xStream.alias(List.class.getName(), List.class);
-        xStream.alias(boName, Map.class);
+        xStream.alias(className, Map.class);
 
         return xStream;
+    }
+
+    public DataDictionaryService getDataDictionaryService() {
+        if (this.dataDictionaryService == null) {
+            this.dataDictionaryService = KRADServiceLocatorWeb.getDataDictionaryService();
+        }
+        return this.dataDictionaryService;
+    }
+
+    public void setDataDictionaryService(DataDictionaryService dataDictionaryService) {
+        this.dataDictionaryService = dataDictionaryService;
     }
 }
