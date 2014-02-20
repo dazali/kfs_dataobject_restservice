@@ -43,14 +43,14 @@ import org.kuali.rice.kns.datadictionary.InquirySectionDefinition;
 import org.kuali.rice.kns.lookup.LookupableHelperService;
 import org.kuali.rice.krad.UserSession;
 import org.kuali.rice.krad.bo.BusinessObject;
+import org.kuali.rice.krad.service.DataDictionaryService;
+import org.kuali.rice.krad.service.KRADServiceLocatorWeb;
 import org.kuali.rice.krad.service.PersistenceStructureService;
 import org.kuali.rice.krad.service.XmlObjectSerializerService;
 import org.kuali.rice.krad.util.GlobalVariables;
 import org.kuali.rice.krad.util.KRADConstants;
 import org.kuali.rice.krad.util.KRADUtils;
 import org.kuali.rice.krad.util.ObjectUtils;
-import org.kuali.rice.krad.web.controller.DocumentControllerBase;
-import org.kuali.rice.krad.web.form.DocumentFormBase;
 import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -64,20 +64,14 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 
 @Controller
-public class DataObjectRestServiceController extends DocumentControllerBase {
+public class DataObjectRestServiceController {
 
     private static org.apache.log4j.Logger LOG = org.apache.log4j.Logger.getLogger(DataObjectRestServiceController.class);
 
+    private DataDictionaryService dataDictionaryService;
     private PersistenceStructureService persistenceStructureService;
     private ParameterService parameterService;
     private PermissionService permissionService;
-
-    @Override
-    protected DocumentFormBase createInitialForm(HttpServletRequest request) {
-        DocumentFormBase form = new DocumentFormBase();
-        form.setReturnLocation("NO_RETURN");
-        return form;
-    }
 
     @ExceptionHandler(AccessDeniedException.class)
     @ResponseStatus(value = HttpStatus.FORBIDDEN, reason = "Not authorized.")
@@ -237,6 +231,33 @@ public class DataObjectRestServiceController extends DocumentControllerBase {
         }
     }
 
+    /*
+    protected boolean verifySignature(HttpHeaders headers) {
+        try {
+            String encodedSignature = headers.getRequestHeader(KSBConstants.DIGITAL_SIGNATURE_HEADER).get(0);
+            String encodedCertificate = headers.getRequestHeader(KSBConstants.KEYSTORE_CERTIFICATE_HEADER).get(0);
+            //String verificationAlias = headers.getRequestHeader(KSBConstants.KEYSTORE_ALIAS_HEADER).get(0);
+
+            Signature verifySig = null;
+            byte[] digitalSignature = null;
+
+            digitalSignature = Base64.decodeBase64(encodedSignature.getBytes("UTF-8"));
+            if (StringUtils.isNotBlank(encodedCertificate)) {
+                byte[] certificate = Base64.decodeBase64(encodedCertificate.getBytes("UTF-8"));
+                CertificateFactory cf = CertificateFactory.getInstance("X.509");
+                verifySig = getDigitalSignatureService().getSignatureForVerification(cf.generateCertificate(new ByteArrayInputStream(certificate)));
+            }// else if (StringUtils.isNotBlank(verificationAlias)) {
+                //verifySig = getDigitalSignatureService().getSignatureForVerification(verificationAlias);
+            //}
+
+            return verifySig.verify(digitalSignature);
+        } catch (Exception e) {
+            LOG.error("Failed to initialize digital signature verification.", e);
+        }
+
+        return false;
+    }*/
+
     protected FinancialSystemBusinessObjectEntry getBusinessObject(String dataobject) {
         try {
             return (FinancialSystemBusinessObjectEntry) getDataDictionaryService().getDictionaryObject(dataobject);
@@ -250,6 +271,17 @@ public class DataObjectRestServiceController extends DocumentControllerBase {
     protected LookupableHelperService getLookupableHelperService(String lookupableID) {
         LookupableHelperService lookupableHelperService = LookupableSpringContext.getLookupable(lookupableID).getLookupableHelperService();
         return lookupableHelperService;
+    }
+
+    public DataDictionaryService getDataDictionaryService() {
+        if (this.dataDictionaryService == null) {
+            this.dataDictionaryService = KRADServiceLocatorWeb.getDataDictionaryService();
+        }
+        return this.dataDictionaryService;
+    }
+
+    public void setDataDictionaryService(DataDictionaryService dataDictionaryService) {
+        this.dataDictionaryService = dataDictionaryService;
     }
 
     public PersistenceStructureService getPersistenceStructureService() {
