@@ -118,6 +118,7 @@ public class DataObjectRestServiceController {
 
             return new ResponseEntity<String>(jsonData, HttpStatus.OK);
         } catch (Exception e) {
+            LOG.error("Unexpected exception has occured.", e);
             throw new RuntimeException("Unexpected exception has occured.");
         }
     }
@@ -140,6 +141,7 @@ public class DataObjectRestServiceController {
 
             return new ResponseEntity<String>(xml, HttpStatus.OK);
         } catch (Exception e) {
+            LOG.error("Unexpected exception has occured.", e);
             throw new RuntimeException("Unexpected exception has occured.");
         }
     }
@@ -225,15 +227,25 @@ public class DataObjectRestServiceController {
     protected void validateRequest(FinancialSystemBusinessObjectEntry boe, String namespace, String dataobject, HttpServletRequest request) throws Exception {
         // check for https (will be ignored in dev mode), authorization
         if ((!ConfigContext.getCurrentContextConfig().getDevMode() && !request.isSecure())) {
-             throw new AccessDeniedException("Not authorized.");
+            LOG.debug("HTTPS check failed.");
+            throw new AccessDeniedException("Not authorized.");
         }
 
         if (boe == null) {
+            LOG.debug("BusinessObjectEntry is null.");
             throw new NoSuchBeanDefinitionException("Data object not found.");
         }
 
         Boolean isModuleLocked = getParameterService().getParameterValueAsBoolean(namespace, KfsParameterConstants.PARAMETER_ALL_DETAIL_TYPE, KRADConstants.SystemGroupParameterNames.OLTP_LOCKOUT_ACTIVE_IND);
-        if (!isAuthorized(request, boe) || (isModuleLocked != null && isModuleLocked) || !boe.hasInquiryDefinition()) {
+        boolean notAuthorized = !isAuthorized(request, boe);
+        boolean moduleIsLocked = isModuleLocked != null && isModuleLocked;
+        boolean noInquiryDefinition = !boe.hasInquiryDefinition();
+
+        if (notAuthorized || moduleIsLocked || noInquiryDefinition) {
+            LOG.debug("notAuthorized: " + notAuthorized);
+            LOG.debug("moduleIsLocked: " + moduleIsLocked);
+            LOG.debug("noInquiryDefinition: " + noInquiryDefinition);
+
             throw new AccessDeniedException("Not authorized.");
         }
     }
