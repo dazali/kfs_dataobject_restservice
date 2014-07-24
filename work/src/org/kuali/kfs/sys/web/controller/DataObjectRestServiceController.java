@@ -53,6 +53,7 @@ import org.kuali.rice.krad.util.GlobalVariables;
 import org.kuali.rice.krad.util.KRADConstants;
 import org.kuali.rice.krad.util.KRADUtils;
 import org.kuali.rice.krad.util.ObjectUtils;
+import org.mortbay.log.Log;
 import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -226,6 +227,7 @@ public class DataObjectRestServiceController {
             fieldValues.put(o.toString(), value[0]);
         }
 
+        Log.debug("LookupableID: " + boe.getLookupDefinition().getLookupableID());
         LookupableHelperService lookupableHelperService = getLookupableHelperService();
         lookupableHelperService.setBusinessObjectClass(boe.getBusinessObjectClass());
 
