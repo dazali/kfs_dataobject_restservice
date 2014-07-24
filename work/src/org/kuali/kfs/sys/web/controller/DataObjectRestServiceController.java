@@ -226,7 +226,7 @@ public class DataObjectRestServiceController {
             fieldValues.put(o.toString(), value[0]);
         }
 
-        LookupableHelperService lookupableHelperService = getLookupableHelperService(boe.getLookupDefinition().getLookupableID());
+        LookupableHelperService lookupableHelperService = getLookupableHelperService();
         lookupableHelperService.setBusinessObjectClass(boe.getBusinessObjectClass());
 
         String limitByParameter = fieldValues.remove(LIMIT_BY_PARAMETER);
@@ -317,12 +317,8 @@ public class DataObjectRestServiceController {
         return null;
     }
 
-    protected LookupableHelperService getLookupableHelperService(String lookupableID) {
-        if (lookupableID != null) {
-            return LookupableSpringContext.getLookupable(lookupableID).getLookupableHelperService();
-        } else {
-            return LookupableSpringContext.getLookupableHelperService(LOOKUPABLE_HELPER_SERVICE);
-        }
+    protected LookupableHelperService getLookupableHelperService() {
+        return LookupableSpringContext.getLookupableHelperService(LOOKUPABLE_HELPER_SERVICE);
     }
 
     public DataDictionaryService getDataDictionaryService() {
