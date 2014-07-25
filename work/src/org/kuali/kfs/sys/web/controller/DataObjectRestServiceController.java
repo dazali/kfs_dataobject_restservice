@@ -44,6 +44,7 @@ import org.kuali.rice.kns.datadictionary.InquirySectionDefinition;
 import org.kuali.rice.kns.lookup.LookupableHelperService;
 import org.kuali.rice.krad.UserSession;
 import org.kuali.rice.krad.bo.BusinessObject;
+import org.kuali.rice.krad.service.BusinessObjectService;
 import org.kuali.rice.krad.service.DataDictionaryService;
 import org.kuali.rice.krad.service.KRADServiceLocator;
 import org.kuali.rice.krad.service.KRADServiceLocatorWeb;
@@ -53,7 +54,6 @@ import org.kuali.rice.krad.util.GlobalVariables;
 import org.kuali.rice.krad.util.KRADConstants;
 import org.kuali.rice.krad.util.KRADUtils;
 import org.kuali.rice.krad.util.ObjectUtils;
-import org.mortbay.log.Log;
 import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -69,6 +69,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 @Controller
 public class DataObjectRestServiceController {
 
+    private static final String USE_BO_SERVICE = "useBoService";
     private static final String LOOKUPABLE_HELPER_SERVICE = "lookupableHelperService";
     private static final String MAX_OBJECTS_TO_RETURN = "maxObjectsToReturn";
     private static final String LIMIT_BY_PARAMETER = "limitByParameter";
@@ -79,6 +80,7 @@ public class DataObjectRestServiceController {
     private PersistenceStructureService persistenceStructureService;
     private ParameterService parameterService;
     private PermissionService permissionService;
+    private BusinessObjectService businessObjectService;
 
     @ExceptionHandler(AccessDeniedException.class)
     @ResponseStatus(value = HttpStatus.FORBIDDEN, reason = "Not authorized.")
@@ -227,25 +229,28 @@ public class DataObjectRestServiceController {
             fieldValues.put(o.toString(), value[0]);
         }
 
-        Log.debug("LookupableID: " + boe.getLookupDefinition().getLookupableID());
-        LookupableHelperService lookupableHelperService = getLookupableHelperService();
-        lookupableHelperService.setBusinessObjectClass(boe.getBusinessObjectClass());
-
-        String limitByParameter = fieldValues.remove(LIMIT_BY_PARAMETER);
-        String maxObjectsToReturn = fieldValues.remove(MAX_OBJECTS_TO_RETURN);
-
         List<? extends BusinessObject> searchResults;
-        if (StringUtils.isEmpty(limitByParameter) || limitByParameter.equalsIgnoreCase("Y")) {
-            searchResults = lookupableHelperService.getSearchResults(fieldValues);
+        String useBoService = fieldValues.remove(USE_BO_SERVICE);
+
+        if (StringUtils.isNotEmpty(useBoService) && useBoService.equalsIgnoreCase("Y")) {
+            searchResults = (List<? extends BusinessObject>) getBusinessObjectService().findMatching(boe.getBusinessObjectClass(), fieldValues);
         } else {
-            try {
-                searchResults = lookupableHelperService.getSearchResultsUnbounded(fieldValues);
-            } catch (UnsupportedOperationException e) {
-                LOG.warn("lookupableHelperService.getSearchResultsUnbounded failed. Retrying the lookup using the default search.", e);
+            String limitByParameter = fieldValues.remove(LIMIT_BY_PARAMETER);
+            LookupableHelperService lookupableHelperService = getLookupableHelperService(boe.getLookupDefinition().getLookupableID());
+            lookupableHelperService.setBusinessObjectClass(boe.getBusinessObjectClass());
+            if (StringUtils.isEmpty(limitByParameter) || limitByParameter.equalsIgnoreCase("Y")) {
                 searchResults = lookupableHelperService.getSearchResults(fieldValues);
+            } else {
+                try {
+                    searchResults = lookupableHelperService.getSearchResultsUnbounded(fieldValues);
+                } catch (UnsupportedOperationException e) {
+                    LOG.warn("lookupableHelperService.getSearchResultsUnbounded failed. Retrying the lookup using the default search.", e);
+                    searchResults = lookupableHelperService.getSearchResults(fieldValues);
+                }
             }
         }
 
+        String maxObjectsToReturn = fieldValues.remove(MAX_OBJECTS_TO_RETURN);
         if (StringUtils.isNotEmpty(maxObjectsToReturn)) {
             int searchLimit = Integer.parseInt(maxObjectsToReturn);
             if (searchLimit > 0) {
@@ -319,8 +324,12 @@ public class DataObjectRestServiceController {
         return null;
     }
 
-    protected LookupableHelperService getLookupableHelperService() {
-        return LookupableSpringContext.getLookupableHelperService(LOOKUPABLE_HELPER_SERVICE);
+    protected LookupableHelperService getLookupableHelperService(String lookupableID) {
+        if (lookupableID != null) {
+            return LookupableSpringContext.getLookupable(lookupableID).getLookupableHelperService();
+        } else {
+            return LookupableSpringContext.getLookupableHelperService(LOOKUPABLE_HELPER_SERVICE);
+        }
     }
 
     public DataDictionaryService getDataDictionaryService() {
@@ -369,6 +378,17 @@ public class DataObjectRestServiceController {
 
     public void setPermissionService(PermissionService permissionService) {
         this.permissionService = permissionService;
+    }
+
+    public BusinessObjectService getBusinessObjectService() {
+        if (businessObjectService == null) {
+            businessObjectService = SpringContext.getBean(BusinessObjectService.class);
+        }
+        return businessObjectService;
+    }
+
+    public void setBusinessObjectService(BusinessObjectService businessObjectService) {
+        this.businessObjectService = businessObjectService;
     }
 
 }
