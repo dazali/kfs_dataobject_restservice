@@ -18,8 +18,11 @@ package org.kuali.kfs.sys.web.controller;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
+import java.util.Set;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -44,6 +47,7 @@ import org.kuali.rice.kns.datadictionary.InquirySectionDefinition;
 import org.kuali.rice.kns.lookup.LookupableHelperService;
 import org.kuali.rice.krad.UserSession;
 import org.kuali.rice.krad.bo.BusinessObject;
+import org.kuali.rice.krad.lookup.LookupUtils;
 import org.kuali.rice.krad.service.BusinessObjectService;
 import org.kuali.rice.krad.service.DataDictionaryService;
 import org.kuali.rice.krad.service.KRADServiceLocator;
@@ -69,10 +73,11 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 @Controller
 public class DataObjectRestServiceController {
 
+    private static final String RETURN_RANDOM_OBJECT = "returnRandomObject";
     private static final String USE_BO_SERVICE = "useBoService";
     private static final String LOOKUPABLE_HELPER_SERVICE = "lookupableHelperService";
-    private static final String MAX_OBJECTS_TO_RETURN = "maxObjectsToReturn";
-    private static final String LIMIT_BY_PARAMETER = "limitByParameter";
+    private static final String LIMIT_RESULT = "limitResult";
+    private static final String UNBOUNDED = "unbounded";
 
     private static org.apache.log4j.Logger LOG = org.apache.log4j.Logger.getLogger(DataObjectRestServiceController.class);
 
@@ -88,7 +93,7 @@ public class DataObjectRestServiceController {
     }
 
     @ExceptionHandler(NoSuchBeanDefinitionException.class)
-    @ResponseStatus(value = HttpStatus.BAD_REQUEST, reason = "Data object not found.")
+    @ResponseStatus(value = HttpStatus.BAD_REQUEST, reason = "Bad request.")
     public void handleNoSuchBeanDefinitionException(NoSuchBeanDefinitionException ex, HttpServletResponse response) {
     }
 
@@ -182,23 +187,18 @@ public class DataObjectRestServiceController {
     }
 
     protected boolean isAuthorized(FinancialSystemBusinessObjectEntry boe) throws Exception {
-        if (boe != null) {
-            UserSession serverUserSession = GlobalVariables.getUserSession();
-
-            if (serverUserSession == null) {
-                LOG.warn("serverUserSession is null");
-            }
-
-            Class businessObjectClass = boe.getBusinessObjectClass();
-            return getPermissionService().isAuthorizedByTemplate(serverUserSession.getPrincipalId(), KRADConstants.KNS_NAMESPACE, KimConstants.PermissionTemplateNames.LOOK_UP_RECORDS, KRADUtils.getNamespaceAndComponentSimpleName(businessObjectClass), Collections.<String, String> emptyMap());
-        } else {
-            if (boe == null) {
-                LOG.warn("boe is null");
-                return false;
-            }
+        if (boe == null) {
+            LOG.error("boe is null");
+            return false;
         }
 
-        return false;
+        UserSession serverUserSession = GlobalVariables.getUserSession();
+        if (serverUserSession == null) {
+            LOG.error("serverUserSession is null");
+            return false;
+        }
+
+        return getPermissionService().isAuthorizedByTemplate(serverUserSession.getPrincipalId(), KRADConstants.KNS_NAMESPACE, KimConstants.PermissionTemplateNames.LOOK_UP_RECORDS, KRADUtils.getNamespaceAndComponentSimpleName(boe.getBusinessObjectClass()), Collections.<String, String> emptyMap());
     }
 
     protected boolean isPropertyTypeValid(Class<?> propertyType) {
@@ -229,36 +229,76 @@ public class DataObjectRestServiceController {
             fieldValues.put(o.toString(), value[0]);
         }
 
-        List<? extends BusinessObject> searchResults;
-        String useBoService = fieldValues.remove(USE_BO_SERVICE);
+        // Retrieve all service related parameters
+        Map<String, String> serviceParameterMap = getServiceParameters(fieldValues);
 
-        if (StringUtils.isNotEmpty(useBoService) && useBoService.equalsIgnoreCase("Y")) {
+        List<? extends BusinessObject> searchResults;
+        if (StringUtils.equalsIgnoreCase(serviceParameterMap.get(USE_BO_SERVICE), "Y")) {
             searchResults = (List<? extends BusinessObject>) getBusinessObjectService().findMatching(boe.getBusinessObjectClass(), fieldValues);
+
+            // limit BO service result
+            if (!StringUtils.equalsIgnoreCase(serviceParameterMap.get(UNBOUNDED), "Y") && StringUtils.isEmpty(serviceParameterMap.get(LIMIT_RESULT))) {
+                serviceParameterMap.put(LIMIT_RESULT, LookupUtils.getApplicationSearchResultsLimit().toString());
+            }
         } else {
-            String limitByParameter = fieldValues.remove(LIMIT_BY_PARAMETER);
             LookupableHelperService lookupableHelperService = getLookupableHelperService(boe.getLookupDefinition().getLookupableID());
             lookupableHelperService.setBusinessObjectClass(boe.getBusinessObjectClass());
-            if (StringUtils.isEmpty(limitByParameter) || limitByParameter.equalsIgnoreCase("Y")) {
-                searchResults = lookupableHelperService.getSearchResults(fieldValues);
-            } else {
+            if (StringUtils.equalsIgnoreCase(serviceParameterMap.get(UNBOUNDED), "Y")) {
                 try {
                     searchResults = lookupableHelperService.getSearchResultsUnbounded(fieldValues);
                 } catch (UnsupportedOperationException e) {
                     LOG.warn("lookupableHelperService.getSearchResultsUnbounded failed. Retrying the lookup using the default search.", e);
                     searchResults = lookupableHelperService.getSearchResults(fieldValues);
                 }
+            } else {
+                searchResults = lookupableHelperService.getSearchResults(fieldValues);
             }
         }
 
-        String maxObjectsToReturn = fieldValues.remove(MAX_OBJECTS_TO_RETURN);
-        if (StringUtils.isNotEmpty(maxObjectsToReturn)) {
-            int searchLimit = Integer.parseInt(maxObjectsToReturn);
-            if (searchLimit > 0) {
-                return searchResults.subList(0, Math.min(searchResults.size(), searchLimit));
-            }
+        // Handle single random object request
+        if (StringUtils.isNotEmpty(serviceParameterMap.get(RETURN_RANDOM_OBJECT))) {
+            return getRandomDataObject(searchResults, Integer.parseInt(serviceParameterMap.get(RETURN_RANDOM_OBJECT)));
+        }
+
+        // Handle limit result request
+        if (StringUtils.isNotEmpty(serviceParameterMap.get(LIMIT_RESULT))) {
+            return getLimitedResult(searchResults, Integer.parseInt(serviceParameterMap.get(LIMIT_RESULT)));
         }
 
         return searchResults;
+    }
+
+    protected List<? extends BusinessObject> getLimitedResult(List<? extends BusinessObject> searchResults, int searchLimit) {
+        if (searchLimit > 0) {
+            return searchResults.subList(0, Math.min(searchResults.size(), searchLimit));
+        }
+
+        return searchResults;
+    }
+
+    protected Map<String, String> getServiceParameters(Map<String, String> fieldValues) {
+        Map<String, String> serviceParameterMap = new HashMap<String, String>();
+        serviceParameterMap.put(USE_BO_SERVICE, fieldValues.remove(USE_BO_SERVICE));
+        serviceParameterMap.put(LIMIT_RESULT, fieldValues.remove(LIMIT_RESULT));
+        serviceParameterMap.put(RETURN_RANDOM_OBJECT, fieldValues.remove(RETURN_RANDOM_OBJECT));
+
+        return serviceParameterMap;
+    }
+
+    protected List<BusinessObject> getRandomDataObject(List<? extends BusinessObject> searchResults, int objectCount) {
+        // return the list if there is no randomizing possibility
+        if (searchResults.size() < 2 || objectCount > searchResults.size()) {
+            return (List<BusinessObject>) searchResults;
+        }
+
+        Random random = new Random();
+        Set<BusinessObject> result = new HashSet<BusinessObject>();
+
+        while (result.size() < objectCount) {
+            result.add(searchResults.get(random.nextInt(searchResults.size())));
+        }
+
+        return new ArrayList<BusinessObject>(result);
     }
 
     protected void validateRequest(FinancialSystemBusinessObjectEntry boe, String namespace, String dataobject, HttpServletRequest request) throws Exception {
@@ -271,6 +311,11 @@ public class DataObjectRestServiceController {
         if (boe == null) {
             LOG.debug("BusinessObjectEntry is null.");
             throw new NoSuchBeanDefinitionException("Data object not found.");
+        }
+
+        if (!namespace.equalsIgnoreCase(KRADUtils.getNamespaceCode(boe.getBusinessObjectClass()))) {
+            LOG.debug("Bad namespace for dataobject: " + boe.getBusinessObjectClass());
+            throw new NoSuchBeanDefinitionException("Invalid namespace.");
         }
 
         Boolean isModuleLocked = getParameterService().getParameterValueAsBoolean(namespace, KfsParameterConstants.PARAMETER_ALL_DETAIL_TYPE, KRADConstants.SystemGroupParameterNames.OLTP_LOCKOUT_ACTIVE_IND);
